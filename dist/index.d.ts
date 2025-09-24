@@ -1,5 +1,5 @@
 import { AnchorProvider, Idl, Program } from "@coral-xyz/anchor";
-import { PublicKey } from "@solana/web3.js";
+import { Connection, PublicKey } from "@solana/web3.js";
 export declare const AGENT_PROGRAM_ID: PublicKey;
 export declare const AGENT_SEED = "agent";
 export type AgentIdl = Idl;
@@ -10,6 +10,8 @@ export type TxOpts = {
     computeUnitPriceMicroLamports?: number;
     feePayer?: PublicKey;
 };
+export declare const DEFAULT_RPC = "https://api.devnet.solana.com";
+export declare function makeConnection(rpcUrl?: string): Connection;
 export type AgentAccount = {
     version: number;
     agentWallet: PublicKey;

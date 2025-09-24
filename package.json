@@ -6,6 +6,11 @@
   "main": "dist/index.js",
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "test": "npm run build && mocha --no-config --no-package -t 20000 \"test/**/*.mjs\""
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/QuantumAgentic/agent-registry-sdk.git"
@@ -18,16 +23,15 @@
     "agent",
     "pda"
   ],
-  "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "clean": "rm -rf dist"
-  },
   "dependencies": {
     "@coral-xyz/anchor": "0.31.1",
     "@solana/web3.js": "^1.95.8",
     "canonicalize": "^2.0.0"
   },
   "devDependencies": {
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "mocha": "^10.7.3",
+    "chai": "^4.5.0",
+    "ts-node": "^10.9.2"
   }
 }

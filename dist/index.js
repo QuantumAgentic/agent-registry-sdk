@@ -1,5 +1,5 @@
 import { Program } from "@coral-xyz/anchor";
-import { PublicKey, SystemProgram } from "@solana/web3.js";
+import { Connection, PublicKey, SystemProgram } from "@solana/web3.js";
 import idlJson from "./idl/agent_registry.json" with { type: "json" };
 import { createHash } from "crypto";
 import canonicalize from "canonicalize";
@@ -18,6 +18,11 @@ function withComputeIx(builder, opts) {
     if (!opts)
         return builder;
     return builder;
+}
+// Default connection/provider helpers
+export const DEFAULT_RPC = "https://api.devnet.solana.com";
+export function makeConnection(rpcUrl) {
+    return new Connection(rpcUrl ?? DEFAULT_RPC, { commitment: "confirmed" });
 }
 const OFFSETS = {
     discriminator: 0,
