@@ -1,4 +1,4 @@
-# 📦 Agent Registry SDK v3.0
+# 📦 Agent Registry SDK
 
 **Lightweight** TypeScript SDK for Solana **Agent Registry** and **Agent Staking** smart contracts.
 
@@ -6,18 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Size](https://img.shields.io/badge/size-84KB-brightgreen.svg)]()
 
-## 🚀 v3.0 - No Anchor!
-
-**No more Anchor** on the client side! SDK 100% based on `@solana/web3.js`.
-
-### Benefits
-
-| Metric | v2.x (Anchor) | v3.0 (Pure Web3) | Gain |
-|----------|---------------|-------------------|------|
-| **Bundle size** | 3.2 MB | 84 KB | **-97%** 🎉 |
-| **npm install** | ~30s | ~3s | **10x faster** ⚡ |
-| **Dependencies** | 26 packages | 2 packages | **-92%** |
-| **Conflicts** | Frequent | None | ✅ |
+**Pure `@solana/web3.js`** implementation - no framework dependencies, ultra-lightweight.
 
 ---
 
@@ -25,7 +14,6 @@
 
 - [Installation](#installation)
 - [Quick Start](#quick-start)
-- [Migration Guide (v2 → v3)](#migration-guide-v2--v3)
 - [API Reference](#api-reference)
 - [Examples](#examples)
 - [Types](#types)
@@ -47,7 +35,8 @@ pnpm add @pipeline/agent-registry-sdk @solana/web3.js
 **Dependencies**:
 - ✅ `@solana/web3.js` (only Solana dependency)
 - ✅ `canonicalize` (JSON canonicalization)
-- ❌ ~~`@coral-xyz/anchor`~~ (removed!)
+
+**Bundle size**: Only 84 KB! 🎉
 
 ---
 
@@ -95,75 +84,6 @@ if (result) {
   console.log("Agent data:", result.account);
 }
 ```
-
----
-
-## 🔄 Migration Guide (v2 → v3)
-
-### Breaking Changes
-
-#### 1. **No More `AnchorProvider`**
-
-```typescript
-// ❌ v2.x (Anchor)
-import { AnchorProvider, Wallet } from "@coral-xyz/anchor";
-const provider = new AnchorProvider(connection, wallet, {});
-await createAgent({ provider, ... });
-
-// ✅ v3.0 (Pure web3)
-import { Connection, Keypair } from "@solana/web3.js";
-const connection = new Connection("https://api.devnet.solana.com");
-const payer = Keypair.generate();
-await createAgent({ connection, payer, ... });
-```
-
-#### 2. **Simpler Function Signatures**
-
-```typescript
-// ❌ v2.x
-await createAgent({
-  provider: anchorProvider,  // Complex Anchor object
-  cardUri: "...",
-  cardHash: hash,
-});
-
-// ✅ v3.0
-await createAgent({
-  connection,  // Just a Connection
-  payer,       // Just a Keypair/Signer
-  cardUri: "...",
-  cardHash: hash,
-});
-```
-
-#### 3. **Reads Without `provider`**
-
-```typescript
-// ❌ v2.x
-const agent = await fetchAgentByCreator(provider, creator);
-
-// ✅ v3.0
-const agent = await fetchAgentByCreator(connection, creator);
-```
-
-#### 4. **No More `Idl` Types**
-
-```typescript
-// ❌ v2.x
-import { Idl } from "@coral-xyz/anchor";
-const stakingIdl: Idl = ...;
-
-// ✅ v3.0
-// No IDL needed in client SDK!
-```
-
-### What Stays the Same
-
-✅ All function names (createAgent, setCard, etc.)  
-✅ All PDA derivation functions  
-✅ All types (AgentAccount, etc.)  
-✅ `hashCardJcs()` utility  
-✅ All business logic
 
 ---
 
@@ -528,23 +448,6 @@ const tx = new Transaction().add(ix);
 
 ---
 
-## 📦 Bundle Size Comparison
-
-```
-v2.x (with Anchor):
-├── @coral-xyz/anchor: 3.2 MB
-├── @solana/web3.js: 1.8 MB
-└── Total: ~5 MB
-
-v3.0 (pure web3):
-├── @solana/web3.js: 1.8 MB
-└── Total: ~84 KB (SDK) + 1.8 MB (web3) = ~1.9 MB
-
-Savings: 62% smaller! 🎉
-```
-
----
-
 ## 🚀 Programs Supported
 
 | Program | ID | Description |
@@ -552,39 +455,6 @@ Savings: 62% smaller! 🎉
 | **Agent Registry** | `59Z648...Diops` | Agent management |
 | **Agent Staking** | `FE5kco...bJak` | Token staking |
 | **Agent Platform** | `3TNdmF...rEbw` | Merged (33% cheaper) |
-
----
-
-## 🔄 Changelog
-
-### v3.0.0 (2025-10-10) - **No Anchor**
-
-**Breaking Changes**:
-- ❌ Removed `@coral-xyz/anchor` dependency
-- ❌ Removed `AnchorProvider` → use `Connection` + `Signer`
-- ❌ Removed `Program` → use instruction builders
-- ❌ Removed `Idl` types
-- ✅ 97% smaller bundle size
-- ✅ 10x faster installation
-- ✅ Zero dependency conflicts
-
-**Migration**: See [Migration Guide](#migration-guide-v2--v3)
-
-### v2.1.0 (2025-10-10)
-
-- Renamed `agentWallet` → `creator`
-- Added `owner` field (transferable)
-- Added `transferOwner()` function
-- Memory at creation support
-
-### v2.0.0 (2025-10-08)
-
-- SPL tokens support
-- Split `init_stake` and `stake`
-
-### v1.0.0 (2025-10-05)
-
-- Initial release
 
 ---
 
@@ -608,4 +478,4 @@ Contributions welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ---
 
-**Made with ❤️ by the Pipeline Team - Now 97% lighter! 🪶**
+**Made with ❤️ by the Pipeline Team**
