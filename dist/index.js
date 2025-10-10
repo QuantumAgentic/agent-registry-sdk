@@ -238,22 +238,14 @@ export function transferOwnerInstruction(params) {
  * Create an agent
  */
 export async function createAgent(params) {
-    // If creator is provided, use it. Otherwise, use payer.publicKey
     const creator = params.creator || params.payer.publicKey;
-    // creatorSigner must match creator (program constraint)
-    // If creatorSigner is not provided, use payer (must be the creator)
-    const creatorSigner = params.creatorSigner || params.payer;
-    // Validate that creatorSigner matches creator
-    if (!creatorSigner.publicKey.equals(creator)) {
-        throw new Error("creatorSigner must match creator (program constraint)");
-    }
     const [agentPda] = deriveAgentPda(creator, params.programId);
     const memoryPtrBytes = params.memoryPtr
         ? new TextEncoder().encode(params.memoryPtr)
         : null;
     const ix = createAgentInstruction({
         agent: agentPda,
-        creatorSigner: creatorSigner.publicKey,
+        creatorSigner: params.payer.publicKey,
         creator,
         cardUri: params.cardUri,
         cardHash: params.cardHash,
@@ -267,7 +259,7 @@ export async function createAgent(params) {
     await sendAndConfirmTransaction({
         connection: params.connection,
         transaction: tx,
-        payer: creatorSigner,
+        payer: params.payer,
     });
     return agentPda;
 }
@@ -456,28 +448,14 @@ export function decodeAgentFromData(data) {
  */
 async function sendAndConfirmTransaction(params) {
     const { connection, transaction, payer, signers = [], commitment = "confirmed" } = params;
-    // Get recent blockhash with proper commitment
-    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash(commitment);
-    transaction.recentBlockhash = blockhash;
+    transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
     transaction.feePayer = payer.publicKey;
-    // Sign transaction with all signers
-    const allSigners = [payer, ...signers].filter((s) => s !== undefined && s !== null);
-    // Ensure we have at least one signer
-    if (allSigners.length === 0) {
-        throw new Error("Transaction must have at least one signer");
-    }
-    transaction.sign(...allSigners);
-    // Send transaction
+    transaction.sign(payer, ...signers);
     const sig = await connection.sendRawTransaction(transaction.serialize(), {
         skipPreflight: false,
         preflightCommitment: commitment,
     });
-    // Confirm transaction with blockhash strategy
-    await connection.confirmTransaction({
-        signature: sig,
-        blockhash,
-        lastValidBlockHeight,
-    }, commitment);
+    await connection.confirmTransaction(sig, commitment);
     return sig;
 }
 /**
@@ -545,15 +523,7 @@ export function createStakingPoolInstruction(params) {
  * Create agent with staking pool in a single atomic transaction
  */
 export async function createAgentWithStakingPool(params) {
-    // If creator is provided, use it. Otherwise, use payer.publicKey
     const creator = params.creator || params.payer.publicKey;
-    // creatorSigner must match creator (program constraint)
-    // If creatorSigner is not provided, use payer (must be the creator)
-    const creatorSigner = params.creatorSigner || params.payer;
-    // Validate that creatorSigner matches creator
-    if (!creatorSigner.publicKey.equals(creator)) {
-        throw new Error("creatorSigner must match creator (program constraint)");
-    }
     const agentProgramId = params.agentProgramId || AGENT_PROGRAM_ID;
     const stakingProgramId = params.stakingProgramId || AGENT_STAKING_PROGRAM_ID;
     // Derive PDAs
@@ -567,7 +537,7 @@ export async function createAgentWithStakingPool(params) {
     // Instruction 1: Create Agent (with hasStaking=true)
     const ix1 = createAgentInstruction({
         agent: agentPda,
-        creatorSigner: creatorSigner.publicKey,
+        creatorSigner: params.payer.publicKey,
         creator,
         cardUri: params.cardUri,
         cardHash: params.cardHash,
@@ -577,7 +547,7 @@ export async function createAgentWithStakingPool(params) {
         memoryHash: params.memoryHash ?? null,
         programId: agentProgramId,
     });
-    // Instruction 2: Create Staking Pool (owner = payer, can be different from creator)
+    // Instruction 2: Create Staking Pool
     const ix2 = createStakingPoolInstruction({
         agent: agentPda,
         stakingPool: poolPda,
@@ -592,7 +562,7 @@ export async function createAgentWithStakingPool(params) {
     const signature = await sendAndConfirmTransaction({
         connection: params.connection,
         transaction: tx,
-        payer: creatorSigner,
+        payer: params.payer,
     });
     return { agentPda, poolPda, vaultPda, signature };
 }

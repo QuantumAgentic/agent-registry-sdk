@@ -36,8 +36,7 @@ pnpm add @pipeline/agent-registry-sdk @solana/web3.js
 - ✅ `@solana/web3.js` (only Solana dependency)
 - ✅ `canonicalize` (JSON canonicalization for JCS hashing)
 
-**Bundle size**: Only **9.6 KB** compressed! 🎉  
-**97% smaller** than Anchor-based SDKs (~300+ KB)
+**Bundle size**: Only 84 KB! 🎉
 
 ---
 
