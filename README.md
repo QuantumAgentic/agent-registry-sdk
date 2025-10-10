@@ -1,27 +1,27 @@
 # 📦 Agent Registry SDK v3.0
 
-**Lightweight** TypeScript SDK pour les smart contracts Solana **Agent Registry** et **Agent Staking**.
+**Lightweight** TypeScript SDK for Solana **Agent Registry** and **Agent Staking** smart contracts.
 
 [![npm version](https://img.shields.io/npm/v/@pipeline/agent-registry-sdk.svg)](https://www.npmjs.com/package/@pipeline/agent-registry-sdk)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Size](https://img.shields.io/badge/size-84KB-brightgreen.svg)]()
 
-## 🚀 v3.0 - Sans Anchor !
+## 🚀 v3.0 - No Anchor!
 
-**Plus besoin d'Anchor** côté client ! SDK 100% basé sur `@solana/web3.js`.
+**No more Anchor** on the client side! SDK 100% based on `@solana/web3.js`.
 
-### Avantages
+### Benefits
 
-| Métrique | v2.x (Anchor) | v3.0 (Pure Web3) | Gain |
+| Metric | v2.x (Anchor) | v3.0 (Pure Web3) | Gain |
 |----------|---------------|-------------------|------|
 | **Bundle size** | 3.2 MB | 84 KB | **-97%** 🎉 |
 | **npm install** | ~30s | ~3s | **10x faster** ⚡ |
 | **Dependencies** | 26 packages | 2 packages | **-92%** |
-| **Conflicts** | Fréquents | Aucun | ✅ |
+| **Conflicts** | Frequent | None | ✅ |
 
 ---
 
-## 📋 Table des Matières
+## 📋 Table of Contents
 
 - [Installation](#installation)
 - [Quick Start](#quick-start)
@@ -37,17 +37,17 @@
 ```bash
 npm install @pipeline/agent-registry-sdk @solana/web3.js
 
-# ou avec yarn
+# or with yarn
 yarn add @pipeline/agent-registry-sdk @solana/web3.js
 
-# ou avec pnpm
+# or with pnpm
 pnpm add @pipeline/agent-registry-sdk @solana/web3.js
 ```
 
-**Dépendances** :
-- ✅ `@solana/web3.js` (seule dépendance Solana)
+**Dependencies**:
+- ✅ `@solana/web3.js` (only Solana dependency)
 - ✅ `canonicalize` (JSON canonicalization)
-- ❌ ~~`@coral-xyz/anchor`~~ (supprimé !)
+- ❌ ~~`@coral-xyz/anchor`~~ (removed!)
 
 ---
 
@@ -55,8 +55,8 @@ pnpm add @pipeline/agent-registry-sdk @solana/web3.js
 
 ```typescript
 import { Connection, Keypair } from "@solana/web3.js";
-import {
-  createAgent,
+import { 
+  createAgent, 
   fetchAgentByCreator,
   hashCardJcs,
   makeConnection 
@@ -237,6 +237,16 @@ async function setMemory(params: {
 }): Promise<void>
 ```
 
+**Memory Modes**:
+
+| Mode | Value | Ptr Required | Hash Required | Use Case |
+|------|-------|--------------|---------------|----------|
+| **None** | 0 | ❌ | ❌ | No memory |
+| **CID** | 1 | ✅ | ❌ | IPFS CID (self-verifying) |
+| **IPNS** | 2 | ✅ | ✅ | IPNS name (mutable) |
+| **URL** | 3 | ✅ | ✅ | HTTPS URL |
+| **Manifest** | 4 | ✅ | ✅ | Manifest pointer |
+
 #### `lockMemory()`
 
 Lock memory permanently.
@@ -324,7 +334,7 @@ async function fetchAgentByCreator(
 
 ### PDA Helpers
 
-All PDA derivation functions remain unchanged:
+All PDA derivation functions:
 
 ```typescript
 function deriveAgentPda(creator: PublicKey, programId?: PublicKey): [PublicKey, number]
@@ -413,7 +423,7 @@ main().catch(console.error);
 ### Example 2: Fetch and Display
 
 ```typescript
-import { Connection } from "@solana/web3.js";
+import { Connection, PublicKey } from "@solana/web3.js";
 import { fetchAgentByCreator } from "@pipeline/agent-registry-sdk";
 
 async function display(creatorAddress: string) {
@@ -445,10 +455,10 @@ import { setMemory } from "@pipeline/agent-registry-sdk";
 async function setIPFSMemory(agentPda: PublicKey) {
   const cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi";
 
-await setMemory({
+  await setMemory({
     connection,
     payer,
-  agentPda,
+    agentPda,
     mode: 1,  // CID mode
     ptr: new TextEncoder().encode(cid),
   });
