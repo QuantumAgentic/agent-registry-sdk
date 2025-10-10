@@ -4,9 +4,9 @@
 
 [![npm version](https://img.shields.io/npm/v/@pipeline/agent-registry-sdk.svg)](https://www.npmjs.com/package/@pipeline/agent-registry-sdk)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Size](https://img.shields.io/badge/size-84KB-brightgreen.svg)]()
+[![Size](https://img.shields.io/badge/size-9.6KB-brightgreen.svg)]()
 
-**Pure `@solana/web3.js`** implementation - no framework dependencies, ultra-lightweight.
+**Pure `@solana/web3.js`** implementation - no Anchor dependency, ultra-lightweight (97% smaller than framework-based SDKs).
 
 ---
 
@@ -34,9 +34,10 @@ pnpm add @pipeline/agent-registry-sdk @solana/web3.js
 
 **Dependencies**:
 - ✅ `@solana/web3.js` (only Solana dependency)
-- ✅ `canonicalize` (JSON canonicalization)
+- ✅ `canonicalize` (JSON canonicalization for JCS hashing)
 
-**Bundle size**: Only 84 KB! 🎉
+**Bundle size**: Only **9.6 KB** compressed! 🎉  
+**97% smaller** than Anchor-based SDKs (~300+ KB)
 
 ---
 
