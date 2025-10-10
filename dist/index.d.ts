@@ -134,6 +134,7 @@ export declare function createAgent(params: {
     connection: Connection;
     payer: Signer;
     creator?: PublicKey;
+    creatorSigner?: Signer;
     cardUri: string;
     cardHash: Uint8Array | number[];
     hasStaking?: boolean;
@@ -248,6 +249,7 @@ export declare function createAgentWithStakingPool(params: {
     connection: Connection;
     payer: Signer;
     creator?: PublicKey;
+    creatorSigner?: Signer;
     tokenMint: PublicKey;
     minStakeAmount: bigint;
     cardUri: string;
