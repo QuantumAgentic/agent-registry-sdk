@@ -1,175 +1,446 @@
-import { Program } from "@coral-xyz/anchor";
-import { Connection, PublicKey, SystemProgram } from "@solana/web3.js";
-import idlJson from "./idl/agent_registry.json" with { type: "json" };
+/**
+ * Agent Registry SDK - v3.0 (No Anchor)
+ * Pure @solana/web3.js implementation for minimal bundle size
+ */
+import { Connection, PublicKey, SystemProgram, Transaction, TransactionInstruction, } from "@solana/web3.js";
 import { createHash } from "crypto";
 import canonicalize from "canonicalize";
-export const AGENT_PROGRAM_ID = new PublicKey(idlJson.address);
-export const AGENT_SEED = "agent";
-export function getProgram(provider) {
-    return new Program(idlJson, AGENT_PROGRAM_ID, provider);
-}
-export function deriveAgentPda(agentWallet) {
-    return PublicKey.findProgramAddressSync([
-        Buffer.from(AGENT_SEED),
-        agentWallet.toBuffer(),
-    ], AGENT_PROGRAM_ID);
-}
-function withComputeIx(builder, opts) {
-    if (!opts)
-        return builder;
-    return builder;
-}
-// Default connection/provider helpers
-export const DEFAULT_RPC = "https://api.devnet.solana.com";
-export function makeConnection(rpcUrl) {
-    return new Connection(rpcUrl ?? DEFAULT_RPC, { commitment: "confirmed" });
-}
-const OFFSETS = {
-    discriminator: 0,
-    version: 8,
-    agentWallet: 8 + 1,
-    admin: 8 + 33,
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+export const AGENT_PROGRAM_ID = new PublicKey("59Z648TXaaZM7j3RrPpVAUQxdn9K42kaAFBbMFbDiops");
+export const AGENT_STAKING_PROGRAM_ID = new PublicKey("FE5kcoY1CsnAFak5PBBUy689hRKvpE2261C1GaWSbJak");
+export const AGENT_PLATFORM_PROGRAM_ID = new PublicKey("3TNdmF3EC9yrJjm5fxfFrrBxur5ntiuoByCqYSgtrEbw");
+export const AGENT_SEED = Buffer.from("agent");
+export const STAKING_POOL_SEED = Buffer.from("staking_pool");
+export const STAKE_ACCOUNT_SEED = Buffer.from("stake_account");
+export const PROGRAM_STATE_SEED = Buffer.from("program_state");
+export const TOKEN_VAULT_SEED = Buffer.from("token_vault");
+// Instruction discriminators (from IDL)
+export const DISCRIMINATORS = {
+    createAgent: Buffer.from([143, 66, 198, 95, 110, 85, 83, 249]),
+    setCard: Buffer.from([103, 251, 221, 167, 224, 225, 172, 222]),
+    setMemory: Buffer.from([239, 170, 26, 41, 36, 6, 91, 42]),
+    lockMemory: Buffer.from([235, 149, 26, 124, 85, 178, 40, 180]),
+    setActive: Buffer.from([68, 183, 188, 13, 135, 215, 116, 159]),
+    closeAgent: Buffer.from([52, 185, 104, 145, 157, 30, 87, 237]),
+    transferOwner: Buffer.from([81, 154, 72, 139, 233, 153, 233, 175]),
 };
-export async function fetchAgentByPda(provider, agentPda) {
-    const program = getProgram(provider);
-    try {
-        const raw = await program.account.agentRegistry.fetch(agentPda);
-        return decodeAgent(raw);
-    }
-    catch (e) {
-        return null;
-    }
+// ============================================================================
+// PDA HELPERS
+// ============================================================================
+export function deriveAgentPda(creator, programId = AGENT_PROGRAM_ID) {
+    return PublicKey.findProgramAddressSync([AGENT_SEED, creator.toBuffer()], programId);
 }
-export async function fetchAgentByWallet(provider, agentWallet) {
-    const [pda] = deriveAgentPda(agentWallet);
-    const acc = await fetchAgentByPda(provider, pda);
+export function deriveStakingPoolPda(agentPda, programId = AGENT_STAKING_PROGRAM_ID) {
+    return PublicKey.findProgramAddressSync([STAKING_POOL_SEED, agentPda.toBuffer()], programId);
+}
+export function deriveStakeAccountPda(staker, agentPda, programId = AGENT_STAKING_PROGRAM_ID) {
+    return PublicKey.findProgramAddressSync([STAKE_ACCOUNT_SEED, staker.toBuffer(), agentPda.toBuffer()], programId);
+}
+export function deriveProgramStatePda(programId = AGENT_STAKING_PROGRAM_ID) {
+    return PublicKey.findProgramAddressSync([PROGRAM_STATE_SEED], programId);
+}
+export function deriveTokenVaultPda(poolPda, programId = AGENT_STAKING_PROGRAM_ID) {
+    return PublicKey.findProgramAddressSync([TOKEN_VAULT_SEED, poolPda.toBuffer()], programId);
+}
+// ============================================================================
+// BORSH ENCODING HELPERS
+// ============================================================================
+function encodeString(str) {
+    const strBytes = Buffer.from(str, "utf8");
+    const len = Buffer.alloc(4);
+    len.writeUInt32LE(strBytes.length, 0);
+    return Buffer.concat([len, strBytes]);
+}
+function encodeOption(value, encoder) {
+    if (value === null || value === undefined) {
+        return Buffer.from([0]); // None
+    }
+    return Buffer.concat([Buffer.from([1]), encoder(value)]); // Some
+}
+function encodeU8(value) {
+    const buf = Buffer.alloc(1);
+    buf.writeUInt8(value, 0);
+    return buf;
+}
+function encodeBool(value) {
+    return Buffer.from([value ? 1 : 0]);
+}
+function encodeBytes(bytes) {
+    const arr = Buffer.from(bytes);
+    const len = Buffer.alloc(4);
+    len.writeUInt32LE(arr.length, 0);
+    return Buffer.concat([len, arr]);
+}
+// ============================================================================
+// INSTRUCTION BUILDERS
+// ============================================================================
+/**
+ * Create Agent instruction
+ */
+export function createAgentInstruction(params) {
+    const programId = params.programId || AGENT_PROGRAM_ID;
+    // Encode parameters
+    const data = Buffer.concat([
+        DISCRIMINATORS.createAgent,
+        params.creator.toBuffer(), // 32 bytes
+        encodeString(params.cardUri),
+        Buffer.from(params.cardHash), // 32 bytes
+        encodeOption(params.hasStaking ?? null, encodeBool),
+        encodeOption(params.memoryMode ?? null, encodeU8),
+        encodeOption(params.memoryPtr ?? null, encodeBytes),
+        encodeOption(params.memoryHash ?? null, (hash) => Buffer.from(hash)),
+    ]);
+    return new TransactionInstruction({
+        keys: [
+            { pubkey: params.agent, isSigner: false, isWritable: true },
+            { pubkey: params.creatorSigner, isSigner: true, isWritable: true },
+            { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+        ],
+        programId,
+        data,
+    });
+}
+/**
+ * Set Card instruction
+ */
+export function setCardInstruction(params) {
+    const programId = params.programId || AGENT_PROGRAM_ID;
+    const data = Buffer.concat([
+        DISCRIMINATORS.setCard,
+        encodeString(params.cardUri),
+        Buffer.from(params.cardHash),
+    ]);
+    return new TransactionInstruction({
+        keys: [
+            { pubkey: params.agent, isSigner: false, isWritable: true },
+            { pubkey: params.owner, isSigner: true, isWritable: false },
+        ],
+        programId,
+        data,
+    });
+}
+/**
+ * Set Memory instruction
+ */
+export function setMemoryInstruction(params) {
+    const programId = params.programId || AGENT_PROGRAM_ID;
+    const data = Buffer.concat([
+        DISCRIMINATORS.setMemory,
+        encodeU8(params.mode),
+        encodeBytes(params.ptr),
+        encodeOption(params.hash, (h) => Buffer.from(h)),
+    ]);
+    return new TransactionInstruction({
+        keys: [
+            { pubkey: params.agent, isSigner: false, isWritable: true },
+            { pubkey: params.owner, isSigner: true, isWritable: false },
+        ],
+        programId,
+        data,
+    });
+}
+/**
+ * Lock Memory instruction
+ */
+export function lockMemoryInstruction(params) {
+    const programId = params.programId || AGENT_PROGRAM_ID;
+    return new TransactionInstruction({
+        keys: [
+            { pubkey: params.agent, isSigner: false, isWritable: true },
+            { pubkey: params.owner, isSigner: true, isWritable: false },
+        ],
+        programId,
+        data: DISCRIMINATORS.lockMemory,
+    });
+}
+/**
+ * Set Active instruction
+ */
+export function setActiveInstruction(params) {
+    const programId = params.programId || AGENT_PROGRAM_ID;
+    const data = Buffer.concat([
+        DISCRIMINATORS.setActive,
+        encodeBool(params.isActive),
+    ]);
+    return new TransactionInstruction({
+        keys: [
+            { pubkey: params.agent, isSigner: false, isWritable: true },
+            { pubkey: params.owner, isSigner: true, isWritable: false },
+        ],
+        programId,
+        data,
+    });
+}
+/**
+ * Close Agent instruction
+ */
+export function closeAgentInstruction(params) {
+    const programId = params.programId || AGENT_PROGRAM_ID;
+    return new TransactionInstruction({
+        keys: [
+            { pubkey: params.agent, isSigner: false, isWritable: true },
+            { pubkey: params.owner, isSigner: true, isWritable: false },
+            { pubkey: params.recipient, isSigner: false, isWritable: true },
+            { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+        ],
+        programId,
+        data: DISCRIMINATORS.closeAgent,
+    });
+}
+/**
+ * Transfer Owner instruction
+ */
+export function transferOwnerInstruction(params) {
+    const programId = params.programId || AGENT_PROGRAM_ID;
+    const data = Buffer.concat([
+        DISCRIMINATORS.transferOwner,
+        params.newOwner.toBuffer(),
+    ]);
+    return new TransactionInstruction({
+        keys: [
+            { pubkey: params.agent, isSigner: false, isWritable: true },
+            { pubkey: params.owner, isSigner: true, isWritable: false },
+        ],
+        programId,
+        data,
+    });
+}
+// ============================================================================
+// HIGH-LEVEL API
+// ============================================================================
+/**
+ * Create an agent
+ */
+export async function createAgent(params) {
+    const creator = params.creator || params.payer.publicKey;
+    const [agentPda] = deriveAgentPda(creator, params.programId);
+    const memoryPtrBytes = params.memoryPtr
+        ? new TextEncoder().encode(params.memoryPtr)
+        : null;
+    const ix = createAgentInstruction({
+        agent: agentPda,
+        creatorSigner: params.payer.publicKey,
+        creator,
+        cardUri: params.cardUri,
+        cardHash: params.cardHash,
+        hasStaking: params.hasStaking ?? true,
+        memoryMode: params.memoryMode ?? null,
+        memoryPtr: memoryPtrBytes,
+        memoryHash: params.memoryHash ?? null,
+        programId: params.programId,
+    });
+    const tx = new Transaction().add(ix);
+    await sendAndConfirmTransaction({
+        connection: params.connection,
+        transaction: tx,
+        payer: params.payer,
+    });
+    return agentPda;
+}
+/**
+ * Set card
+ */
+export async function setCard(params) {
+    const ix = setCardInstruction({
+        agent: params.agentPda,
+        owner: params.payer.publicKey,
+        cardUri: params.cardUri,
+        cardHash: params.cardHash,
+        programId: params.programId,
+    });
+    const tx = new Transaction().add(ix);
+    await sendAndConfirmTransaction({
+        connection: params.connection,
+        transaction: tx,
+        payer: params.payer,
+    });
+}
+/**
+ * Set memory
+ */
+export async function setMemory(params) {
+    const ix = setMemoryInstruction({
+        agent: params.agentPda,
+        owner: params.payer.publicKey,
+        mode: params.mode,
+        ptr: params.ptr,
+        hash: params.hash ?? null,
+        programId: params.programId,
+    });
+    const tx = new Transaction().add(ix);
+    await sendAndConfirmTransaction({
+        connection: params.connection,
+        transaction: tx,
+        payer: params.payer,
+    });
+}
+/**
+ * Lock memory
+ */
+export async function lockMemory(params) {
+    const ix = lockMemoryInstruction({
+        agent: params.agentPda,
+        owner: params.payer.publicKey,
+        programId: params.programId,
+    });
+    const tx = new Transaction().add(ix);
+    await sendAndConfirmTransaction({
+        connection: params.connection,
+        transaction: tx,
+        payer: params.payer,
+    });
+}
+/**
+ * Set active
+ */
+export async function setActive(params) {
+    const ix = setActiveInstruction({
+        agent: params.agentPda,
+        owner: params.payer.publicKey,
+        isActive: params.isActive,
+        programId: params.programId,
+    });
+    const tx = new Transaction().add(ix);
+    await sendAndConfirmTransaction({
+        connection: params.connection,
+        transaction: tx,
+        payer: params.payer,
+    });
+}
+/**
+ * Close agent
+ */
+export async function closeAgent(params) {
+    const ix = closeAgentInstruction({
+        agent: params.agentPda,
+        owner: params.payer.publicKey,
+        recipient: params.recipient,
+        programId: params.programId,
+    });
+    const tx = new Transaction().add(ix);
+    await sendAndConfirmTransaction({
+        connection: params.connection,
+        transaction: tx,
+        payer: params.payer,
+    });
+}
+/**
+ * Transfer owner
+ */
+export async function transferOwner(params) {
+    const ix = transferOwnerInstruction({
+        agent: params.agentPda,
+        owner: params.payer.publicKey,
+        newOwner: params.newOwner,
+        programId: params.programId,
+    });
+    const tx = new Transaction().add(ix);
+    await sendAndConfirmTransaction({
+        connection: params.connection,
+        transaction: tx,
+        payer: params.payer,
+    });
+}
+// ============================================================================
+// READ FUNCTIONS
+// ============================================================================
+/**
+ * Fetch agent by PDA
+ */
+export async function fetchAgentByPda(connection, agentPda, programId) {
+    const accInfo = await connection.getAccountInfo(agentPda);
+    if (!accInfo || !accInfo.data)
+        return null;
+    return decodeAgentFromData(new Uint8Array(accInfo.data));
+}
+/**
+ * Fetch agent by creator
+ */
+export async function fetchAgentByCreator(connection, creator, programId) {
+    const [pda] = deriveAgentPda(creator, programId);
+    const acc = await fetchAgentByPda(connection, pda, programId);
     if (!acc)
         return null;
     return { pda, account: acc };
 }
-export async function listAgents(provider, opts) {
-    const program = getProgram(provider);
-    const filters = [];
-    if (opts?.admin) {
-        filters.push({ memcmp: { offset: OFFSETS.admin, bytes: opts.admin.toBase58() } });
-    }
-    const all = await program.account.agentRegistry.all(filters.length ? filters : undefined);
-    let out = all.map((e) => ({ pubkey: e.publicKey, account: decodeAgent(e.account) }));
-    if (opts?.activeOnly)
-        out = out.filter((x) => x.account.isActive);
-    if (opts?.limit != null)
-        out = out.slice(0, opts.limit);
-    return out;
-}
-function decodeAgent(raw) {
-    const memPtrLen = raw.memoryPtrLen ?? raw.memory_ptr_len ?? 0;
-    const cardUriLen = raw.cardUriLen ?? raw.card_uri_len ?? 0;
-    const memoryPtrFull = new Uint8Array(raw.memoryPtr ?? raw.memory_ptr ?? []);
-    const cardUriFull = new Uint8Array(raw.cardUri ?? raw.card_uri ?? []);
-    const memPtr = memoryPtrFull.slice(0, memPtrLen);
-    const cardUriStr = new TextDecoder().decode(cardUriFull.slice(0, cardUriLen));
-    const flags = raw.flags >>> 0;
+/**
+ * Decode agent from raw data
+ */
+export function decodeAgentFromData(data) {
+    const o = {
+        version: 8,
+        creator: 9,
+        owner: 41,
+        memoryMode: 73,
+        memoryPtrLen: 74,
+        memoryPtr: 75,
+        memoryHash: 171,
+        cardUriLen: 203,
+        cardUri: 204,
+        cardHash: 300,
+        flags: 332,
+        bump: 336,
+    };
+    const getU8 = (i) => data[i] ?? 0;
+    const getU32 = (i) => (data[i] | (data[i + 1] << 8) | (data[i + 2] << 16) | (data[i + 3] << 24)) >>> 0;
+    const getPubkey = (i) => new PublicKey(data.slice(i, i + 32));
+    const version = getU8(o.version);
+    const creator = getPubkey(o.creator);
+    const owner = getPubkey(o.owner);
+    const memoryMode = getU8(o.memoryMode);
+    const memoryPtrLen = getU8(o.memoryPtrLen);
+    const memoryPtrFull = data.slice(o.memoryPtr, o.memoryPtr + 96);
+    const memoryPtr = memoryPtrFull.slice(0, memoryPtrLen);
+    const memoryHash = data.slice(o.memoryHash, o.memoryHash + 32);
+    const cardUriLen = getU8(o.cardUriLen);
+    const cardUriFull = data.slice(o.cardUri, o.cardUri + 96);
+    const cardUri = new TextDecoder().decode(cardUriFull.slice(0, cardUriLen));
+    const cardHash = data.slice(o.cardHash, o.cardHash + 32);
+    const flags = getU32(o.flags);
+    const bump = getU8(o.bump);
     return {
-        version: Number(raw.version ?? 0),
-        agentWallet: new PublicKey(raw.agentWallet ?? raw.agent_wallet),
-        admin: new PublicKey(raw.admin),
-        memoryMode: Number(raw.memoryMode ?? raw.memory_mode ?? 0),
-        memoryPtr: memPtr,
-        memoryHash: new Uint8Array(raw.memoryHash ?? raw.memory_hash ?? new Array(32).fill(0)),
-        cardUri: cardUriStr,
-        cardHash: new Uint8Array(raw.cardHash ?? raw.card_hash ?? new Array(32).fill(0)),
+        version,
+        creator,
+        owner,
+        memoryMode,
+        memoryPtr,
+        memoryHash,
+        cardUri,
+        cardHash,
         flags,
-        bump: Number(raw.bump ?? 0),
+        bump,
         isActive: (flags & 1) !== 0,
         isLocked: (flags & (1 << 1)) !== 0,
+        hasStaking: (flags & (1 << 2)) !== 0,
     };
 }
-export async function createAgent(opts) {
-    const program = getProgram(opts.provider);
-    const [agentPda] = deriveAgentPda(opts.agentWallet);
-    await program.methods
-        .createAgent(opts.agentWallet, opts.cardUri ?? null, opts.cardHash ? Array.from(opts.cardHash) : null)
-        .accounts({ agent: agentPda, admin: opts.provider.wallet.publicKey, systemProgram: SystemProgram.programId })
-        .rpc();
-    return agentPda;
+// ============================================================================
+// UTILITIES
+// ============================================================================
+/**
+ * Send and confirm transaction
+ */
+async function sendAndConfirmTransaction(params) {
+    const { connection, transaction, payer, signers = [], commitment = "confirmed" } = params;
+    transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+    transaction.feePayer = payer.publicKey;
+    transaction.sign(payer, ...signers);
+    const sig = await connection.sendRawTransaction(transaction.serialize(), {
+        skipPreflight: false,
+        preflightCommitment: commitment,
+    });
+    await connection.confirmTransaction(sig, commitment);
+    return sig;
 }
-export async function setCard(opts) {
-    const program = getProgram(opts.provider);
-    // client-side guards
-    requireLen(opts.cardUri, 96, "cardUri");
-    requireUrlHttpsIfUrl(opts.cardUri);
-    await program.methods
-        .setCard(opts.cardUri, Array.from(opts.cardHash))
-        .accounts({ agent: opts.agentPda, admin: opts.provider.wallet.publicKey })
-        .rpc();
-}
-export async function setMemory(opts) {
-    const program = getProgram(opts.provider);
-    const ptrArr = Array.from(opts.ptr);
-    if (ptrArr.length > 96)
-        throw new Error("ptr too long (max 96)");
-    const zero = new Uint8Array(32);
-    if (opts.mode === 0) {
-        if (ptrArr.length !== 0)
-            throw new Error("None: ptr must be empty");
-        if (opts.hash && !eq32(opts.hash, zero))
-            throw new Error("None: hash must be null/zero");
-    }
-    else if (opts.mode === 1) {
-        if (ptrArr.length === 0)
-            throw new Error("Cid: ptr required");
-        if (opts.hash && !eq32(opts.hash, zero))
-            throw new Error("Cid: hash must be null/zero");
-    }
-    else if (opts.mode === 2 || opts.mode === 3 || opts.mode === 4) {
-        if (ptrArr.length === 0)
-            throw new Error("Ipns/Url/Manifest: ptr required");
-        if (!opts.hash || opts.hash.length !== 32)
-            throw new Error("Ipns/Url/Manifest: 32-byte hash required");
-        if (opts.mode === 3) {
-            const s = new TextDecoder().decode(new Uint8Array(ptrArr));
-            if (!s.startsWith("https://"))
-                throw new Error("Url mode requires https://");
-        }
-    }
-    else {
-        throw new Error("invalid mode");
-    }
-    await program.methods
-        .setMemory(opts.mode, ptrArr, opts.hash ? Array.from(opts.hash) : null)
-        .accounts({ agent: opts.agentPda, admin: opts.provider.wallet.publicKey })
-        .rpc();
-}
-export async function lockMemory(provider, agentPda) {
-    const program = getProgram(provider);
-    await program.methods
-        .lockMemory()
-        .accounts({ agent: agentPda, admin: provider.wallet.publicKey })
-        .rpc();
-}
-export async function setActive(provider, agentPda, isActive) {
-    const program = getProgram(provider);
-    await program.methods
-        .setActive(isActive)
-        .accounts({ agent: agentPda, admin: provider.wallet.publicKey })
-        .rpc();
-}
-export async function closeAgent(provider, agentPda, recipient) {
-    const program = getProgram(provider);
-    await program.methods
-        .closeAgent()
-        .accounts({ agent: agentPda, admin: provider.wallet.publicKey, recipient, systemProgram: SystemProgram.programId })
-        .rpc();
-}
-export async function transferAdmin(provider, agentPda, newAdmin) {
-    const program = getProgram(provider);
-    await program.methods
-        .transferAdmin(newAdmin)
-        .accounts({ agent: agentPda, admin: provider.wallet.publicKey })
-        .rpc();
-}
+/**
+ * Hash card using JCS (JSON Canonical Serialization) + SHA-256
+ */
 export async function hashCardJcs(card) {
-    const canon = typeof card === "string" ? canonicalize(JSON.parse(card)) : canonicalize(card);
+    const canon = typeof card === "string"
+        ? canonicalize(JSON.parse(card))
+        : canonicalize(card);
     // Browser WebCrypto fallback
     if (typeof globalThis.crypto?.subtle?.digest === "function") {
         const enc = new TextEncoder().encode(canon);
@@ -180,24 +451,14 @@ export async function hashCardJcs(card) {
     const hash = createHash("sha256").update(canon).digest();
     return new Uint8Array(hash);
 }
-function eq32(a, b) {
-    const aa = a instanceof Uint8Array ? a : new Uint8Array(a);
-    if (aa.length !== 32)
-        return false;
-    for (let i = 0; i < 32; i++)
-        if (aa[i] !== b[i])
-            return false;
-    return true;
-}
-function requireLen(s, max, label) {
-    if (new TextEncoder().encode(s).length > max)
-        throw new Error(`${label} too long (max ${max})`);
-}
-function requireUrlHttpsIfUrl(u) {
-    try {
-        const url = new URL(u);
-        if (url.protocol !== "https:")
-            throw new Error("cardUri must use https://");
-    }
-    catch { /* not a URL ⇒ allowed (ipfs:// etc.) */ }
+export const RPC_BY_CLUSTER = {
+    devnet: "https://api.devnet.solana.com",
+    testnet: "https://api.testnet.solana.com",
+    mainnet: "https://api.mainnet-beta.solana.com",
+};
+export function makeConnection(rpcOrCluster, commitment = "confirmed") {
+    const url = rpcOrCluster && rpcOrCluster in RPC_BY_CLUSTER
+        ? RPC_BY_CLUSTER[rpcOrCluster]
+        : rpcOrCluster ?? RPC_BY_CLUSTER.devnet;
+    return new Connection(url, commitment);
 }

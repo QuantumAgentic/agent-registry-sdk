@@ -28,18 +28,17 @@
     "no-anchor"
   ],
   "dependencies": {
-    "@solana/web3.js": "^1.95.0",
+    "@solana/web3.js": "^1.95.8",
     "canonicalize": "^2.0.0"
   },
   "peerDependencies": {
     "@solana/web3.js": "^1.95.0"
   },
   "devDependencies": {
-    "@types/mocha": "^10.0.10",
-    "@types/node": "^20.0.0",
-    "chai": "^4.5.0",
+    "typescript": "^5.7.3",
     "mocha": "^10.7.3",
-    "typescript": "^5.7.3"
+    "chai": "^4.5.0",
+    "@types/node": "^20.0.0"
   },
   "files": [
     "dist",
@@ -50,3 +49,4 @@
     "node": ">=16"
   }
 }
+
