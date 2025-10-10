@@ -11,6 +11,9 @@ export declare const STAKING_POOL_SEED: Buffer<ArrayBuffer>;
 export declare const STAKE_ACCOUNT_SEED: Buffer<ArrayBuffer>;
 export declare const PROGRAM_STATE_SEED: Buffer<ArrayBuffer>;
 export declare const TOKEN_VAULT_SEED: Buffer<ArrayBuffer>;
+export declare const TOKEN_PROGRAM_ID: PublicKey;
+export declare const SYSTEM_PROGRAM_ID: PublicKey;
+export declare const RENT_SYSVAR_ID: PublicKey;
 export declare const DISCRIMINATORS: {
     createAgent: Buffer<ArrayBuffer>;
     setCard: Buffer<ArrayBuffer>;
@@ -19,6 +22,12 @@ export declare const DISCRIMINATORS: {
     setActive: Buffer<ArrayBuffer>;
     closeAgent: Buffer<ArrayBuffer>;
     transferOwner: Buffer<ArrayBuffer>;
+    initProgramState: Buffer<ArrayBuffer>;
+    createStakingPool: Buffer<ArrayBuffer>;
+    initStake: Buffer<ArrayBuffer>;
+    stake: Buffer<ArrayBuffer>;
+    updateMinStake: Buffer<ArrayBuffer>;
+    withdrawStake: Buffer<ArrayBuffer>;
 };
 export type AgentAccount = {
     version: number;
@@ -220,3 +229,37 @@ export declare function hashCardJcs(card: unknown): Promise<Uint8Array>;
 export type ClusterName = "devnet" | "testnet" | "mainnet";
 export declare const RPC_BY_CLUSTER: Record<ClusterName, string>;
 export declare function makeConnection(rpcOrCluster?: string | ClusterName, commitment?: Commitment): Connection;
+/**
+ * Create Staking Pool instruction
+ */
+export declare function createStakingPoolInstruction(params: {
+    agent: PublicKey;
+    stakingPool: PublicKey;
+    tokenVault: PublicKey;
+    tokenMint: PublicKey;
+    owner: PublicKey;
+    minStakeAmount: bigint;
+    stakingProgramId?: PublicKey;
+}): TransactionInstruction;
+/**
+ * Create agent with staking pool in a single atomic transaction
+ */
+export declare function createAgentWithStakingPool(params: {
+    connection: Connection;
+    payer: Signer;
+    creator?: PublicKey;
+    tokenMint: PublicKey;
+    minStakeAmount: bigint;
+    cardUri: string;
+    cardHash: Uint8Array | number[];
+    memoryMode?: number;
+    memoryPtr?: string;
+    memoryHash?: Uint8Array | number[];
+    agentProgramId?: PublicKey;
+    stakingProgramId?: PublicKey;
+}): Promise<{
+    agentPda: PublicKey;
+    poolPda: PublicKey;
+    vaultPda: PublicKey;
+    signature: string;
+}>;

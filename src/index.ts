@@ -33,7 +33,14 @@ export const PROGRAM_STATE_SEED = Buffer.from("program_state");
 export const TOKEN_VAULT_SEED = Buffer.from("token_vault");
 
 // Instruction discriminators (from IDL)
+// SPL Token Program ID
+export const TOKEN_PROGRAM_ID = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+export const SYSTEM_PROGRAM_ID = new PublicKey("11111111111111111111111111111111");
+export const RENT_SYSVAR_ID = new PublicKey("SysvarRent111111111111111111111111111111111");
+
+// Instruction discriminators (from IDL)
 export const DISCRIMINATORS = {
+  // Agent Registry
   createAgent: Buffer.from([143, 66, 198, 95, 110, 85, 83, 249]),
   setCard: Buffer.from([103, 251, 221, 167, 224, 225, 172, 222]),
   setMemory: Buffer.from([239, 170, 26, 41, 36, 6, 91, 42]),
@@ -41,6 +48,13 @@ export const DISCRIMINATORS = {
   setActive: Buffer.from([68, 183, 188, 13, 135, 215, 116, 159]),
   closeAgent: Buffer.from([52, 185, 104, 145, 157, 30, 87, 237]),
   transferOwner: Buffer.from([81, 154, 72, 139, 233, 153, 233, 175]),
+  // Agent Staking
+  initProgramState: Buffer.from([206, 55, 251, 246, 152, 194, 56, 56]),
+  createStakingPool: Buffer.from([104, 58, 70, 37, 225, 212, 145, 93]),
+  initStake: Buffer.from([177, 156, 4, 57, 220, 174, 174, 155]),
+  stake: Buffer.from([206, 176, 202, 18, 200, 209, 179, 108]),
+  updateMinStake: Buffer.from([209, 210, 237, 163, 84, 150, 199, 196]),
+  withdrawStake: Buffer.from([153, 8, 22, 138, 105, 176, 87, 66]),
 };
 
 // ============================================================================
@@ -717,5 +731,119 @@ export function makeConnection(
       ? RPC_BY_CLUSTER[rpcOrCluster as ClusterName]
       : rpcOrCluster ?? RPC_BY_CLUSTER.devnet;
   return new Connection(url, commitment);
+}
+
+// ============================================================================
+// STAKING INSTRUCTIONS
+// ============================================================================
+
+/**
+ * Create Staking Pool instruction
+ */
+export function createStakingPoolInstruction(params: {
+  agent: PublicKey;
+  stakingPool: PublicKey;
+  tokenVault: PublicKey;
+  tokenMint: PublicKey;
+  owner: PublicKey;
+  minStakeAmount: bigint;
+  stakingProgramId?: PublicKey;
+}): TransactionInstruction {
+  const programId = params.stakingProgramId || AGENT_STAKING_PROGRAM_ID;
+
+  // Encode min_stake_amount as u64 (8 bytes, little-endian)
+  const minStakeBuf = Buffer.alloc(8);
+  minStakeBuf.writeBigUInt64LE(params.minStakeAmount, 0);
+
+  const data = Buffer.concat([
+    DISCRIMINATORS.createStakingPool,
+    minStakeBuf,
+  ]);
+
+  return new TransactionInstruction({
+    keys: [
+      { pubkey: params.agent, isSigner: false, isWritable: false },
+      { pubkey: params.stakingPool, isSigner: false, isWritable: true },
+      { pubkey: params.tokenVault, isSigner: false, isWritable: true },
+      { pubkey: params.tokenMint, isSigner: false, isWritable: false },
+      { pubkey: params.owner, isSigner: true, isWritable: true },
+      { pubkey: SYSTEM_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: RENT_SYSVAR_ID, isSigner: false, isWritable: false },
+    ],
+    programId,
+    data,
+  });
+}
+
+// ============================================================================
+// ATOMIC TRANSACTION: CREATE AGENT + STAKING POOL
+// ============================================================================
+
+/**
+ * Create agent with staking pool in a single atomic transaction
+ */
+export async function createAgentWithStakingPool(params: {
+  connection: Connection;
+  payer: Signer;
+  creator?: PublicKey;
+  tokenMint: PublicKey;
+  minStakeAmount: bigint;
+  cardUri: string;
+  cardHash: Uint8Array | number[];
+  memoryMode?: number;
+  memoryPtr?: string;
+  memoryHash?: Uint8Array | number[];
+  agentProgramId?: PublicKey;
+  stakingProgramId?: PublicKey;
+}): Promise<{ agentPda: PublicKey; poolPda: PublicKey; vaultPda: PublicKey; signature: string }> {
+  const creator = params.creator || params.payer.publicKey;
+  const agentProgramId = params.agentProgramId || AGENT_PROGRAM_ID;
+  const stakingProgramId = params.stakingProgramId || AGENT_STAKING_PROGRAM_ID;
+
+  // Derive PDAs
+  const [agentPda] = deriveAgentPda(creator, agentProgramId);
+  const [poolPda] = deriveStakingPoolPda(agentPda, stakingProgramId);
+  const [vaultPda] = deriveTokenVaultPda(poolPda, stakingProgramId);
+
+  // Convert memory parameters
+  const memoryPtrBytes = params.memoryPtr
+    ? new TextEncoder().encode(params.memoryPtr)
+    : null;
+
+  // Instruction 1: Create Agent (with hasStaking=true)
+  const ix1 = createAgentInstruction({
+    agent: agentPda,
+    creatorSigner: params.payer.publicKey,
+    creator,
+    cardUri: params.cardUri,
+    cardHash: params.cardHash,
+    hasStaking: true, // Force true for atomic creation
+    memoryMode: params.memoryMode ?? null,
+    memoryPtr: memoryPtrBytes,
+    memoryHash: params.memoryHash ?? null,
+    programId: agentProgramId,
+  });
+
+  // Instruction 2: Create Staking Pool
+  const ix2 = createStakingPoolInstruction({
+    agent: agentPda,
+    stakingPool: poolPda,
+    tokenVault: vaultPda,
+    tokenMint: params.tokenMint,
+    owner: params.payer.publicKey,
+    minStakeAmount: params.minStakeAmount,
+    stakingProgramId,
+  });
+
+  // Build and send atomic transaction
+  const tx = new Transaction().add(ix1, ix2);
+  const signature = await sendAndConfirmTransaction({
+    connection: params.connection,
+    transaction: tx,
+    payer: params.payer,
+  });
+
+  return { agentPda, poolPda, vaultPda, signature };
 }
 
