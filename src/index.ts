@@ -1,5 +1,5 @@
-import { AnchorProvider, Idl, Program } from "@coral-xyz/anchor";
-import { Connection, PublicKey, SystemProgram } from "@solana/web3.js";
+import { AnchorProvider, Idl, Program, BN } from "@coral-xyz/anchor";
+import { Connection, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 import idlJson from "./idl/agent_registry.json" with { type: "json" };
 import { createHash } from "crypto";
 import canonicalize from "canonicalize";
@@ -467,6 +467,266 @@ export async function withdrawStake(opts: {
       systemProgram: SystemProgram.programId,
     })
     .rpc();
+}
+
+// -------------------- Transaction Atomique --------------------
+
+/**
+ * Crée un agent avec staking pool dans une seule transaction atomique
+ * Cette fonction construit une TX contenant 2 instructions:
+ * 1. agent-registry.createAgent (avec has_staking=true)
+ * 2. agent-staking.createStakingPool
+ */
+export async function createAgentWithStakingPool(opts: {
+  provider: AnchorProvider;
+  stakingIdl: Idl;
+  agentWallet: PublicKey;
+  tokenMint: PublicKey;
+  minStakeAmount: number | bigint;
+  cardUri?: string;
+  cardHash?: Uint8Array | number[];
+  agentRegistryProgramId?: PublicKey;
+  stakingProgramId?: PublicKey;
+} & TxOpts): Promise<{ agentPda: PublicKey; poolPda: PublicKey; vaultPda: PublicKey; signature: string }> {
+  const agentProgram = getProgram(opts.provider, opts.agentRegistryProgramId);
+  const stakingProgram = getStakingProgram(opts.provider, opts.stakingIdl, opts.stakingProgramId);
+  
+  // Derive all PDAs
+  const [agentPda] = deriveAgentPda(opts.agentWallet);
+  const [poolPda] = deriveStakingPoolPda(agentPda, opts.stakingProgramId);
+  const [vaultPda] = deriveTokenVaultPda(poolPda, opts.stakingProgramId);
+  
+  const TOKEN_PROGRAM_ID = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+  const RENT_SYSVAR = new PublicKey("SysvarRent111111111111111111111111111111111");
+  
+  // Instruction 1: createAgent avec has_staking=true
+  const ix1 = await (agentProgram.methods as any)
+    .createAgent(
+      opts.agentWallet,
+      opts.cardUri ?? null,
+      opts.cardHash ? Array.from(opts.cardHash) : null,
+      true  // has_staking=true
+    )
+    .accounts({
+      agent: agentPda,
+      admin: opts.provider.wallet.publicKey,
+      systemProgram: SystemProgram.programId,
+    })
+    .instruction();
+  
+  // Instruction 2: createStakingPool
+  const ix2 = await (stakingProgram.methods as any)
+    .createStakingPool(
+      typeof opts.minStakeAmount === 'bigint' ? opts.minStakeAmount : new BN(opts.minStakeAmount)
+    )
+    .accounts({
+      agent: agentPda,
+      stakingPool: poolPda,
+      tokenVault: vaultPda,
+      tokenMint: opts.tokenMint,
+      owner: opts.provider.wallet.publicKey,
+      systemProgram: SystemProgram.programId,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      rent: RENT_SYSVAR,
+    })
+    .instruction();
+  
+  // Build & send atomic transaction
+  const tx = new Transaction().add(ix1, ix2);
+  const signature = await opts.provider.sendAndConfirm(tx);
+  
+  return { agentPda, poolPda, vaultPda, signature };
+}
+
+// -------------------- Read Helpers --------------------
+
+export type StakingPoolAccount = {
+  owner: PublicKey;
+  agentPda: PublicKey;
+  tokenMint: PublicKey;
+  tokenVault: PublicKey;
+  minStakeAmount: bigint;
+  totalStaked: bigint;
+  createdAt: bigint;
+  flags: number;
+  bump: number;
+};
+
+export type StakeAccount = {
+  staker: PublicKey;
+  agentPda: PublicKey;
+  stakedAmount: bigint;
+  stakedAt: bigint;
+  lastUpdatedAt: bigint;
+  bump: number;
+};
+
+export type ProgramStateAccount = {
+  authority: PublicKey;
+  treasury: PublicKey;
+  feeImmediate: number;
+  feeRegular: number;
+  feeMax: number;
+  decayDurationSeconds: bigint;
+  bump: number;
+};
+
+export async function fetchStakingPool(
+  provider: AnchorProvider,
+  stakingIdl: Idl,
+  poolPda: PublicKey,
+  stakingProgramId?: PublicKey
+): Promise<StakingPoolAccount | null> {
+  const program = getStakingProgram(provider, stakingIdl, stakingProgramId);
+  try {
+    const raw = await (program.account as any).stakingPool.fetch(poolPda);
+    return {
+      owner: raw.owner as PublicKey,
+      agentPda: raw.agentPda as PublicKey,
+      tokenMint: raw.tokenMint as PublicKey,
+      tokenVault: raw.tokenVault as PublicKey,
+      minStakeAmount: BigInt(raw.minStakeAmount.toString()),
+      totalStaked: BigInt(raw.totalStaked.toString()),
+      createdAt: BigInt(raw.createdAt.toString()),
+      flags: raw.flags,
+      bump: raw.bump,
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+export async function fetchStakeAccount(
+  provider: AnchorProvider,
+  stakingIdl: Idl,
+  stakePda: PublicKey,
+  stakingProgramId?: PublicKey
+): Promise<StakeAccount | null> {
+  const program = getStakingProgram(provider, stakingIdl, stakingProgramId);
+  try {
+    const raw = await (program.account as any).stakeAccount.fetch(stakePda);
+    return {
+      staker: raw.staker as PublicKey,
+      agentPda: raw.agentPda as PublicKey,
+      stakedAmount: BigInt(raw.stakedAmount.toString()),
+      stakedAt: BigInt(raw.stakedAt.toString()),
+      lastUpdatedAt: BigInt(raw.lastUpdatedAt.toString()),
+      bump: raw.bump,
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+export async function fetchProgramState(
+  provider: AnchorProvider,
+  stakingIdl: Idl,
+  stakingProgramId?: PublicKey
+): Promise<ProgramStateAccount | null> {
+  const program = getStakingProgram(provider, stakingIdl, stakingProgramId);
+  const [statePda] = deriveProgramStatePda(stakingProgramId);
+  try {
+    const raw = await (program.account as any).programState.fetch(statePda);
+    return {
+      authority: raw.authority as PublicKey,
+      treasury: raw.treasury as PublicKey,
+      feeImmediate: raw.feeImmediate,
+      feeRegular: raw.feeRegular,
+      feeMax: raw.feeMax,
+      decayDurationSeconds: BigInt(raw.decayDurationSeconds.toString()),
+      bump: raw.bump,
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+// -------------------- List Helpers --------------------
+
+export async function listStakingPools(
+  provider: AnchorProvider,
+  stakingIdl: Idl,
+  opts?: {
+    owner?: PublicKey;
+    tokenMint?: PublicKey;
+    limit?: number;
+    stakingProgramId?: PublicKey;
+  }
+): Promise<Array<{ pubkey: PublicKey; account: StakingPoolAccount }>> {
+  const program = getStakingProgram(provider, stakingIdl, opts?.stakingProgramId);
+  const filters: any[] = [];
+  
+  if (opts?.owner) {
+    // offset 8 (discriminator) + 0 (owner field)
+    filters.push({ memcmp: { offset: 8, bytes: opts.owner.toBase58() } });
+  }
+  if (opts?.tokenMint) {
+    // offset 8 + 32 (owner) + 32 (agentPda) = 72
+    filters.push({ memcmp: { offset: 72, bytes: opts.tokenMint.toBase58() } });
+  }
+  
+  const all = await (program.account as any).stakingPool.all(filters.length ? filters : undefined);
+  let out = all.map((e: any) => ({
+    pubkey: e.publicKey as PublicKey,
+    account: {
+      owner: e.account.owner as PublicKey,
+      agentPda: e.account.agentPda as PublicKey,
+      tokenMint: e.account.tokenMint as PublicKey,
+      tokenVault: e.account.tokenVault as PublicKey,
+      minStakeAmount: BigInt(e.account.minStakeAmount.toString()),
+      totalStaked: BigInt(e.account.totalStaked.toString()),
+      createdAt: BigInt(e.account.createdAt.toString()),
+      flags: e.account.flags,
+      bump: e.account.bump,
+    },
+  }));
+  
+  if (opts?.limit != null) out = out.slice(0, opts.limit);
+  return out;
+}
+
+export async function listStakesByUser(
+  provider: AnchorProvider,
+  stakingIdl: Idl,
+  staker: PublicKey,
+  opts?: {
+    agentPda?: PublicKey;
+    minAmount?: bigint;
+    limit?: number;
+    stakingProgramId?: PublicKey;
+  }
+): Promise<Array<{ pubkey: PublicKey; account: StakeAccount }>> {
+  const program = getStakingProgram(provider, stakingIdl, opts?.stakingProgramId);
+  const filters: any[] = [
+    // offset 8 (discriminator) + 0 (staker field)
+    { memcmp: { offset: 8, bytes: staker.toBase58() } },
+  ];
+  
+  if (opts?.agentPda) {
+    // offset 8 + 32 (staker) = 40
+    filters.push({ memcmp: { offset: 40, bytes: opts.agentPda.toBase58() } });
+  }
+  
+  const all = await (program.account as any).stakeAccount.all(filters);
+  let out = all.map((e: any) => ({
+    pubkey: e.publicKey as PublicKey,
+    account: {
+      staker: e.account.staker as PublicKey,
+      agentPda: e.account.agentPda as PublicKey,
+      stakedAmount: BigInt(e.account.stakedAmount.toString()),
+      stakedAt: BigInt(e.account.stakedAt.toString()),
+      lastUpdatedAt: BigInt(e.account.lastUpdatedAt.toString()),
+      bump: e.account.bump,
+    },
+  }));
+  
+  // Filter by minAmount if provided
+  if (opts?.minAmount != null) {
+    out = out.filter((x) => x.account.stakedAmount >= opts.minAmount!);
+  }
+  
+  if (opts?.limit != null) out = out.slice(0, opts.limit);
+  return out;
 }
 
 export async function hashCardJcs(card: unknown): Promise<Uint8Array> {
