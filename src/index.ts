@@ -18,17 +18,17 @@ export function getProgram(provider: AnchorProvider, programIdOverride?: PublicK
   return new (Program as any)(idlJson as unknown as AgentIdl, pid, provider) as Program<AgentIdl>;
 }
 
-export function deriveAgentPda(agentWallet: PublicKey): [PublicKey, number] {
+export function deriveAgentPda(creator: PublicKey): [PublicKey, number] {
   return PublicKey.findProgramAddressSync([
     Buffer.from(AGENT_SEED),
-    agentWallet.toBuffer(),
+    creator.toBuffer(),
   ], AGENT_PROGRAM_ID);
 }
 
-export function deriveStakingPda(agentWallet: PublicKey): [PublicKey, number] {
+export function deriveStakingPda(creator: PublicKey): [PublicKey, number] {
   return PublicKey.findProgramAddressSync([
     Buffer.from(STAKING_SEED),
-    agentWallet.toBuffer(),
+    creator.toBuffer(),
   ], AGENT_PROGRAM_ID);
 }
 
@@ -90,7 +90,7 @@ export function makeConnection(rpcOrCluster?: string | ClusterName) {
 // -------------------- Reads --------------------
 export type AgentAccount = {
   version: number;
-  agentWallet: PublicKey;
+  creator: PublicKey;  // Renamed from agentWallet: address of the creator
   admin: PublicKey;
   memoryMode: number;
   memoryPtr: Uint8Array; // trimmed to length
@@ -106,7 +106,7 @@ export type AgentAccount = {
 const OFFSETS = {
   discriminator: 0,
   version: 8,
-  agentWallet: 8 + 1,
+  creator: 8 + 1,  // Renamed from agentWallet
   admin: 8 + 33,
 };
 
@@ -127,8 +127,8 @@ export async function fetchAgentByPdaRaw(connection: Connection, agentPda: Publi
   return decodeAgentFromData(new Uint8Array(accInfo.data));
 }
 
-export async function fetchAgentByWallet(provider: AnchorProvider, agentWallet: PublicKey, programIdOverride?: PublicKey): Promise<{ pda: PublicKey; account: AgentAccount } | null> {
-  const [pda] = deriveAgentPda(agentWallet);
+export async function fetchAgentByCreator(provider: AnchorProvider, creator: PublicKey, programIdOverride?: PublicKey): Promise<{ pda: PublicKey; account: AgentAccount } | null> {
+  const [pda] = deriveAgentPda(creator);
   const acc = await fetchAgentByPda(provider, pda, programIdOverride);
   if (!acc) return null;
   return { pda, account: acc };
@@ -157,7 +157,7 @@ function decodeAgent(raw: any): AgentAccount {
   const flags: number = raw.flags >>> 0;
   return {
     version: Number(raw.version ?? 0),
-    agentWallet: new PublicKey(raw.agentWallet ?? raw.agent_wallet),
+    creator: new PublicKey(raw.creator ?? raw.agentWallet ?? raw.agent_wallet),  // Support old field names for backwards compat
     admin: new PublicKey(raw.admin),
     memoryMode: Number(raw.memoryMode ?? raw.memory_mode ?? 0),
     memoryPtr: memPtr,
@@ -176,7 +176,7 @@ export function decodeAgentFromData(data: Uint8Array): AgentAccount {
   // Offsets within account data (includes 8B discriminator)
   const o = {
     version: 8,
-    agentWallet: 9,
+    creator: 9,  // Renamed from agentWallet
     admin: 41,
     memoryMode: 73,
     memoryPtrLen: 74,
@@ -192,7 +192,7 @@ export function decodeAgentFromData(data: Uint8Array): AgentAccount {
   const getU32 = (i: number) => (data[i] | (data[i+1]<<8) | (data[i+2]<<16) | (data[i+3]<<24)) >>> 0;
   const getPubkey = (i: number) => new PublicKey(data.slice(i, i+32));
   const version = getU8(o.version);
-  const agentWallet = getPubkey(o.agentWallet);
+  const creator = getPubkey(o.creator);
   const admin = getPubkey(o.admin);
   const memoryMode = getU8(o.memoryMode);
   const memoryPtrLen = getU8(o.memoryPtrLen);
@@ -207,7 +207,7 @@ export function decodeAgentFromData(data: Uint8Array): AgentAccount {
   const bump = getU8(o.bump);
   return {
     version,
-    agentWallet,
+    creator,
     admin,
     memoryMode,
     memoryPtr,
@@ -223,16 +223,16 @@ export function decodeAgentFromData(data: Uint8Array): AgentAccount {
 
 export async function createAgent(opts: {
   provider: AnchorProvider;
-  agentWallet: PublicKey;
+  creator: PublicKey;  // Renamed from agentWallet: address of the creator
   cardUri?: string;
   cardHash?: Uint8Array | number[];
   hasStaking?: boolean;
   programId?: PublicKey;
 } & TxOpts) {
   const program = getProgram(opts.provider, opts.programId);
-  const [agentPda] = deriveAgentPda(opts.agentWallet);
+  const [agentPda] = deriveAgentPda(opts.creator);
   await (program.methods as any)
-    .createAgent(opts.agentWallet, opts.cardUri ?? null, opts.cardHash ? Array.from(opts.cardHash) : null, !!opts.hasStaking)
+    .createAgent(opts.creator, opts.cardUri ?? null, opts.cardHash ? Array.from(opts.cardHash) : null, !!opts.hasStaking)
     .accounts({ agent: agentPda, admin: opts.provider.wallet.publicKey, systemProgram: SystemProgram.programId })
     .rpc();
   return agentPda;
@@ -324,11 +324,11 @@ export async function transferAdmin(provider: AnchorProvider, agentPda: PublicKe
 export async function initStaking(opts: {
   provider: AnchorProvider;
   agentPda: PublicKey;
-  agentWallet: PublicKey; // for PDA derivation of staking
+  creator: PublicKey; // for PDA derivation of staking (renamed from agentWallet)
   programId?: PublicKey;
 } & TxOpts) {
   const program = getProgram(opts.provider, opts.programId);
-  const [stakingPda] = deriveStakingPda(opts.agentWallet);
+  const [stakingPda] = deriveStakingPda(opts.creator);
   await (program.methods as any)
     .initStaking()
     .accounts({ agent: opts.agentPda, staking: stakingPda, admin: opts.provider.wallet.publicKey, systemProgram: SystemProgram.programId })
@@ -480,7 +480,7 @@ export async function withdrawStake(opts: {
 export async function createAgentWithStakingPool(opts: {
   provider: AnchorProvider;
   stakingIdl: Idl;
-  agentWallet: PublicKey;
+  creator: PublicKey;  // Renamed from agentWallet: address of the creator
   tokenMint: PublicKey;
   minStakeAmount: number | bigint;
   cardUri?: string;
@@ -492,7 +492,7 @@ export async function createAgentWithStakingPool(opts: {
   const stakingProgram = getStakingProgram(opts.provider, opts.stakingIdl, opts.stakingProgramId);
   
   // Derive all PDAs
-  const [agentPda] = deriveAgentPda(opts.agentWallet);
+  const [agentPda] = deriveAgentPda(opts.creator);
   const [poolPda] = deriveStakingPoolPda(agentPda, opts.stakingProgramId);
   const [vaultPda] = deriveTokenVaultPda(poolPda, opts.stakingProgramId);
   
@@ -502,7 +502,7 @@ export async function createAgentWithStakingPool(opts: {
   // Instruction 1: createAgent avec has_staking=true
   const ix1 = await (agentProgram.methods as any)
     .createAgent(
-      opts.agentWallet,
+      opts.creator,
       opts.cardUri ?? null,
       opts.cardHash ? Array.from(opts.cardHash) : null,
       true  // has_staking=true
