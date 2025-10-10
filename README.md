@@ -44,8 +44,8 @@ pnpm add @pipeline/agent-registry-sdk @solana/web3.js
 
 ```typescript
 import { Connection, Keypair } from "@solana/web3.js";
-import { 
-  createAgent, 
+import {
+  createAgent,
   fetchAgentByCreator,
   hashCardJcs,
   makeConnection 
@@ -224,6 +224,61 @@ async function transferOwner(params: {
 
 ---
 
+### Atomic Transactions
+
+#### `createAgentWithStakingPool()`
+
+Create agent and staking pool in a single atomic transaction.
+
+```typescript
+async function createAgentWithStakingPool(params: {
+  connection: Connection;
+  payer: Signer;
+  creator?: PublicKey;         // Optional: defaults to payer.publicKey
+  tokenMint: PublicKey;        // SPL token for staking
+  minStakeAmount: bigint;      // Minimum stake amount
+  cardUri: string;             // Required
+  cardHash: Uint8Array | number[];  // Required (32 bytes)
+  memoryMode?: number;         // Optional
+  memoryPtr?: string;          // Optional
+  memoryHash?: Uint8Array | number[];  // Optional
+  agentProgramId?: PublicKey;
+  stakingProgramId?: PublicKey;
+}): Promise<{
+  agentPda: PublicKey;
+  poolPda: PublicKey;
+  vaultPda: PublicKey;
+  signature: string;
+}>
+```
+
+**Example**:
+
+```typescript
+import { PublicKey } from "@solana/web3.js";
+
+const tokenMint = new PublicKey("So11111111111111111111111111111111111111112"); // Wrapped SOL
+const cardHash = await hashCardJcs({ name: "Staking Agent" });
+
+const result = await createAgentWithStakingPool({
+  connection,
+  payer: myKeypair,
+  tokenMint,
+  minStakeAmount: 1_000_000n, // 1 token (6 decimals)
+  cardUri: "https://example.com/card.json",
+  cardHash,
+});
+
+console.log("✅ Agent:", result.agentPda.toBase58());
+console.log("✅ Pool:", result.poolPda.toBase58());
+console.log("✅ Vault:", result.vaultPda.toBase58());
+console.log("✅ TX:", result.signature);
+```
+
+**Note**: For v1.0, only agent+pool creation is supported. Stake/unstake functions will come in v2.0.
+
+---
+
 ### Read Functions
 
 #### `fetchAgentByPda()`
@@ -375,10 +430,10 @@ import { setMemory } from "@pipeline/agent-registry-sdk";
 async function setIPFSMemory(agentPda: PublicKey) {
   const cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi";
 
-  await setMemory({
+await setMemory({
     connection,
     payer,
-    agentPda,
+  agentPda,
     mode: 1,  // CID mode
     ptr: new TextEncoder().encode(cid),
   });
