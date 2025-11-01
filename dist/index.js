@@ -8,8 +8,8 @@ import canonicalize from "canonicalize";
 // ============================================================================
 // CONSTANTS
 // ============================================================================
-export const AGENT_PROGRAM_ID = new PublicKey("59Z648TXaaZM7j3RrPpVAUQxdn9K42kaAFBbMFbDiops");
-export const AGENT_STAKING_PROGRAM_ID = new PublicKey("FE5kcoY1CsnAFak5PBBUy689hRKvpE2261C1GaWSbJak");
+export const AGENT_PROGRAM_ID = new PublicKey("25wEsSLdsmZUisXuciyUXZqbpocsk5CJ7Uf6Eq553N8r");
+export const AGENT_STAKING_PROGRAM_ID = new PublicKey("j3WMvorrddakwt69dqrQ5cve5APpyd4bxUCb9UF9Aqj");
 export const AGENT_PLATFORM_PROGRAM_ID = new PublicKey("3TNdmF3EC9yrJjm5fxfFrrBxur5ntiuoByCqYSgtrEbw");
 export const AGENT_SEED = Buffer.from("agent");
 export const STAKING_POOL_SEED = Buffer.from("staking_pool");
@@ -21,16 +21,16 @@ export const TOKEN_VAULT_SEED = Buffer.from("token_vault");
 export const TOKEN_PROGRAM_ID = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 export const SYSTEM_PROGRAM_ID = new PublicKey("11111111111111111111111111111111");
 export const RENT_SYSVAR_ID = new PublicKey("SysvarRent111111111111111111111111111111111");
-// Instruction discriminators (from IDL)
+// Instruction discriminators (from IDL - Updated 2025-10-10)
 export const DISCRIMINATORS = {
     // Agent Registry
     createAgent: Buffer.from([143, 66, 198, 95, 110, 85, 83, 249]),
-    setCard: Buffer.from([103, 251, 221, 167, 224, 225, 172, 222]),
-    setMemory: Buffer.from([239, 170, 26, 41, 36, 6, 91, 42]),
-    lockMemory: Buffer.from([235, 149, 26, 124, 85, 178, 40, 180]),
-    setActive: Buffer.from([68, 183, 188, 13, 135, 215, 116, 159]),
+    setCard: Buffer.from([179, 140, 204, 98, 31, 239, 197, 254]),
+    setMemory: Buffer.from([250, 172, 63, 75, 110, 204, 221, 71]),
+    lockMemory: Buffer.from([131, 69, 62, 97, 45, 127, 223, 59]),
+    setActive: Buffer.from([29, 16, 225, 132, 38, 216, 206, 33]),
     closeAgent: Buffer.from([52, 185, 104, 145, 157, 30, 87, 237]),
-    transferOwner: Buffer.from([81, 154, 72, 139, 233, 153, 233, 175]),
+    transferOwner: Buffer.from([245, 25, 221, 175, 106, 229, 225, 45]),
     // Agent Staking
     initProgramState: Buffer.from([206, 55, 251, 246, 152, 194, 56, 56]),
     createStakingPool: Buffer.from([104, 58, 70, 37, 225, 212, 145, 93]),

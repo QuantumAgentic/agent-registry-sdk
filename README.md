@@ -507,8 +507,8 @@ const tx = new Transaction().add(ix);
 
 | Program | ID | Description |
 |---------|----|----- --|
-| **Agent Registry** | `59Z648TXaaZM7j3RrPpVAUQxdn9K42kaAFBbMFbDiops` | Agent management |
-| **Agent Staking** | `FE5kcoY1CsnAFak5PBBUy689hRKvpE2261C1GaWSbJak` | Token staking |
+| **Agent Registry** | `25wEsSLdsmZUisXuciyUXZqbpocsk5CJ7Uf6Eq553N8r` | Agent management |
+| **Agent Staking** | `j3WMvorrddakwt69dqrQ5cve5APpyd4bxUCb9UF9Aqj` | Token staking |
 
 ### Using Program IDs
 
@@ -516,10 +516,10 @@ const tx = new Transaction().add(ix);
 import { AGENT_PROGRAM_ID, AGENT_STAKING_PROGRAM_ID } from "@pipeline/agent-registry-sdk";
 
 console.log(AGENT_PROGRAM_ID.toBase58());
-// => 59Z648TXaaZM7j3RrPpVAUQxdn9K42kaAFBbMFbDiops
+// => 25wEsSLdsmZUisXuciyUXZqbpocsk5CJ7Uf6Eq553N8r
 
 console.log(AGENT_STAKING_PROGRAM_ID.toBase58());
-// => FE5kcoY1CsnAFak5PBBUy689hRKvpE2261C1GaWSbJak
+// => j3WMvorrddakwt69dqrQ5cve5APpyd4bxUCb9UF9Aqj
 ```
 
 You can override these by passing `programId` or `stakingProgramId` parameters to SDK functions.
