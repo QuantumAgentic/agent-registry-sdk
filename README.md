@@ -2,9 +2,9 @@
 
 **Lightweight** TypeScript SDK for Solana **Agent Registry** and **Agent Staking** smart contracts.
 
-[![npm version](https://img.shields.io/npm/v/@pipeline/agent-registry-sdk.svg)](https://www.npmjs.com/package/@pipeline/agent-registry-sdk)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Size](https://img.shields.io/badge/size-9.6KB-brightgreen.svg)]()
+[![Install](https://img.shields.io/badge/install-GitHub-blue.svg)](https://github.com/QuantumAgentic/agent-registry-sdk)
 
 **Pure `@solana/web3.js`** implementation - no Anchor dependency, ultra-lightweight (97% smaller than framework-based SDKs).
 
@@ -22,14 +22,27 @@
 
 ## 🚀 Installation
 
+> **Note:** This package is not yet published to npm. Install directly from GitHub.
+
 ```bash
-npm install @pipeline/agent-registry-sdk @solana/web3.js
+npm install github:QuantumAgentic/agent-registry-sdk @solana/web3.js
 
 # or with yarn
-yarn add @pipeline/agent-registry-sdk @solana/web3.js
+yarn add github:QuantumAgentic/agent-registry-sdk @solana/web3.js
 
 # or with pnpm
-pnpm add @pipeline/agent-registry-sdk @solana/web3.js
+pnpm add github:QuantumAgentic/agent-registry-sdk @solana/web3.js
+```
+
+### Installing a Specific Version
+
+For production use, it's recommended to pin to a specific commit or tag:
+
+```bash
+npm install github:QuantumAgentic/agent-registry-sdk#commit-hash @solana/web3.js
+
+# Example with specific commit
+npm install github:QuantumAgentic/agent-registry-sdk#abc1234 @solana/web3.js
 ```
 
 **Dependencies**:
